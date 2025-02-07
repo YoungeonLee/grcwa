@@ -96,6 +96,9 @@ if AG_AVAILABLE:
 import torch
 
 if TORCH_AVAILABLE:
+    def torch_transpose(tensor):
+        return tensor.T
+
     class TorchBackend():
         """ PyTorch Backend """
         isinstance = staticmethod(isinstance)
@@ -115,7 +118,7 @@ if TORCH_AVAILABLE:
         concatenate = staticmethod(torch.cat)
         eye = staticmethod(torch.eye)
         diag = staticmethod(torch.diag)        
-        transpose = staticmethod(torch.transpose)                
+        transpose = staticmethod(torch_transpose)                
             
         eig = staticmethod(torch.eig)
         inv = staticmethod(torch.inverse)
