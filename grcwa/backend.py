@@ -8,6 +8,13 @@ try:
 except ImportError:
     AG_AVAILABLE = False
 
+# Import pytorch if available
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
 class NumpyBackend():
     """ Numpy Backend """
     isinstance = staticmethod(isinstance)
@@ -86,7 +93,48 @@ if AG_AVAILABLE:
         imag = staticmethod(npa.imag)
         abs = staticmethod(npa.abs)
 
-backend = NumpyBackend()
+import torch
+
+if TORCH_AVAILABLE:
+    class TorchBackend():
+        """ PyTorch Backend """
+        isinstance = staticmethod(isinstance)
+        pi = staticmethod(torch.pi)
+        tensor = staticmethod(torch.tensor)
+
+        array = staticmethod(torch.tensor)
+        sum = staticmethod(torch.sum)
+        vstack = staticmethod(torch.vstack)
+        hstack = staticmethod(torch.hstack)
+        zeros_like = staticmethod(torch.zeros_like)
+        zeros = staticmethod(torch.zeros)
+        ones = staticmethod(torch.ones)
+        meshgrid = staticmethod(torch.meshgrid)
+        reshape = staticmethod(torch.reshape)
+        where = staticmethod(torch.where)
+        concatenate = staticmethod(torch.cat)
+        eye = staticmethod(torch.eye)
+        diag = staticmethod(torch.diag)        
+        transpose = staticmethod(torch.transpose)                
+            
+        eig = staticmethod(torch.eig)
+        inv = staticmethod(torch.inverse)
+        dot = staticmethod(torch.matmul)  # Use matmul for dot product
+        outer = staticmethod(torch.ger)   # Use ger for outer product
+        conj = staticmethod(torch.conj)
+        trace = staticmethod(torch.trace)
+        fft2 = staticmethod(torch.fft.fft2)
+        ifft2 = staticmethod(torch.fft.ifft2)
+
+        sin = staticmethod(torch.sin)
+        cos = staticmethod(torch.cos)
+        exp = staticmethod(torch.exp)
+        sqrt = staticmethod(torch.sqrt)
+        real = staticmethod(torch.real)
+        imag = staticmethod(torch.imag)
+        abs = staticmethod(torch.abs)
+
+    backend = NumpyBackend()
 
 def set_backend(name):
     """
@@ -103,11 +151,16 @@ def set_backend(name):
     if name == 'autograd' and not AG_AVAILABLE:
         raise ValueError("Autograd backend is not available, autograd must \
             be installed.")
+    elif name == 'torch' and not TORCH_AVAILABLE:
+        raise ValueError("Pytorch backend is not available, pytorch must \
+            be installed.")
 
     # change backend by monkeypatching
     if name == 'numpy':
         backend.__class__ = NumpyBackend
     elif name == 'autograd':
         backend.__class__ = AutogradBackend
+    elif name =='torch':
+        backend.__class__ = TorchBackend
     else:
         raise ValueError("unknown backend")
