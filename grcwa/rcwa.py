@@ -461,7 +461,7 @@ def SolveLayerEigensystem_uniform(omega,kx,ky,epsilon):
     q = bd.where(bd.imag(q)<0.,-q,q)
 
     q = bd.concatenate((q,q))
-    phi = bd.eye(2*nG)
+    phi = bd.eye(2*nG, dtype=complex)
     return q,phi
 
 def SolveLayerEigensystem(omega,kx,ky,kp,ep2):

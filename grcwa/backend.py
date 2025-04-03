@@ -53,6 +53,8 @@ class NumpyBackend():
     imag = staticmethod(np.imag)
     abs = staticmethod(np.abs)    
 
+    range = staticmethod(range)
+
 if AG_AVAILABLE:
     from .primitives import (eig, inv)    
     class AutogradBackend():
@@ -93,6 +95,8 @@ if AG_AVAILABLE:
         imag = staticmethod(npa.imag)
         abs = staticmethod(npa.abs)
 
+        range = staticmethod(range)
+
 import torch
 
 if TORCH_AVAILABLE:
@@ -120,7 +124,7 @@ if TORCH_AVAILABLE:
         diag = staticmethod(torch.diag)        
         transpose = staticmethod(torch_transpose)                
             
-        eig = staticmethod(torch.eig)
+        eig = staticmethod(torch.linalg.eig)
         inv = staticmethod(torch.inverse)
         dot = staticmethod(torch.matmul)  # Use matmul for dot product
         outer = staticmethod(torch.ger)   # Use ger for outer product
@@ -137,7 +141,9 @@ if TORCH_AVAILABLE:
         imag = staticmethod(torch.imag)
         abs = staticmethod(torch.abs)
 
-    backend = NumpyBackend()
+        range = staticmethod(torch.arange)
+
+backend = NumpyBackend()
 
 def set_backend(name):
     """

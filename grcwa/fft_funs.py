@@ -41,7 +41,7 @@ def get_conv(dN,s_in,G):
     sfft = bd.fft2(s_in)*dN
     
 
-    ix = range(nG)
+    ix = bd.range(nG)
     ii,jj = bd.meshgrid(ix,ix,indexing='ij')
     s_out = sfft[G[ii,0]-G[jj,0], G[ii,1]-G[jj,1]]    
     return s_out
