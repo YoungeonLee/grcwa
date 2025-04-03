@@ -1,4 +1,10 @@
 from . import backend as bd
+try:
+    import torch
+    from .backend import TorchBackend
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 from .fft_funs import Epsilon_fft,get_ifft
 from .kbloch import Lattice_Reciprocate,Lattice_getG,Lattice_SetKs
 
@@ -24,7 +30,11 @@ class obj:
         self.nG = nG
         self.verbose = verbose
         self.Layer_N = 0  # total number of layers
-      
+
+        if TORCH_AVAILABLE and bd.__class__ == TorchBackend:
+            self.theta = torch.tensor(theta, dtype=float)
+            self.phi = torch.tensor(phi, dtype=float)
+
         # the length of the following variables = number of total layers
         self.thickness_list = []
         self.id_list = []  #[type, No., No. in patterned/uniform, No. in its family] starting from 0
@@ -53,6 +63,8 @@ class obj:
         
     def Add_LayerUniform(self,thickness,epsilon):
         #assert type(thickness) == float, 'thickness should be a float'
+        if TORCH_AVAILABLE and bd.__class__ == TorchBackend:
+            epsilon = torch.tensor(epsilon, dtype=complex)
 
         self.id_list.append([0,self.Layer_N,self.Uniform_N])
         self.Uniform_ep_list.append(epsilon)
@@ -126,6 +138,10 @@ class obj:
         '''
         Front incidence
         '''
+        if TORCH_AVAILABLE and bd.__class__ == TorchBackend:
+            s_phase = torch.tensor(s_phase, dtype=complex)
+            p_phase = torch.tensor(p_phase, dtype=complex)
+
         self.direction = direction
         theta = self.theta
         phi = self.phi
@@ -159,6 +175,9 @@ class obj:
         '''
         Fourier transform + eigenvalue for grid layer
         '''
+        if TORCH_AVAILABLE and bd.__class__ == TorchBackend:
+            ep_all = torch.tensor(ep_all, dtype=complex)
+
         ptri = 0
         ptr = 0
         for i in range(self.Layer_N):
