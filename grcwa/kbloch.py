@@ -1,6 +1,6 @@
-import numpy as np
+import torch
 
-def Lattice_Reciprocate(L1,L2):
+def Lattice_Reciprocate(L1,L2,device):
     '''Given two lattice vectors L1,L2 in the form of (Lx,Ly), returns the
     reciprocate vectors Lk/(2*pi)
     '''
@@ -11,12 +11,12 @@ def Lattice_Reciprocate(L1,L2):
     
     d = L1[0]*L2[1]-L1[1]*L2[0]
 
-    Lk1 = np.array([L2[1]/d, -L2[0]/d])
-    Lk2 = np.array([-L1[1]/d, L1[0]/d])
+    Lk1 = torch.tensor([L2[1]/d, -L2[0]/d], dtype=float, device=device)
+    Lk2 = torch.tensor([-L1[1]/d, L1[0]/d], dtype=float, device=device)
 
     return Lk1,Lk2
 
-def Lattice_getG(nG,Lk1,Lk2,method=0):
+def Lattice_getG(nG,Lk1,Lk2,device,method=0):
     '''
     The G is defined to produce the following reciprocal vector:
     k = G[:,0] Lk1 + G[:,1] Lk2 (both k and Lk don't include the 2pi factor)
@@ -26,9 +26,9 @@ def Lattice_getG(nG,Lk1,Lk2,method=0):
     assert type(nG) == int, 'nG must be integar'
     
     if method == 0:
-        G,nG = Gsel_circular(nG, Lk1, Lk2)
+        G,nG = Gsel_circular(nG, Lk1, Lk2, device=device)
     elif method == 1:
-        G,nG = Gsel_parallelogramic(nG, Lk1, Lk2)
+        G,nG = Gsel_parallelogramic(nG, Lk1, Lk2, device=device)
     else:
         raise Exception('Truncation scheme is not included')
 
@@ -40,44 +40,44 @@ def Lattice_SetKs(G, kx0, ky0, Lk1, Lk2):
     2pi factor is now included in the returned kx,ky
     '''
 
-    kx = kx0 + 2*np.pi*(Lk1[0]*G[:,0]+Lk2[0]*G[:,1])
-    ky = ky0 + 2*np.pi*(Lk1[1]*G[:,0]+Lk2[1]*G[:,1])
+    kx = kx0 + 2*torch.pi*(Lk1[0]*G[:,0]+Lk2[0]*G[:,1])
+    ky = ky0 + 2*torch.pi*(Lk1[1]*G[:,0]+Lk2[1]*G[:,1])
 
     return kx,ky
 
 
-def Gsel_parallelogramic(nG, Lk1, Lk2):
+def Gsel_parallelogramic(nG, Lk1, Lk2, device):
     ''' From Liu's gsel.c'''
-    u = np.linalg.norm(Lk1)
-    v = np.linalg.norm(Lk2)
-    uv = np.dot(Lk1,Lk2)
+    u = torch.linalg.norm(Lk1)
+    v = torch.linalg.norm(Lk2)
+    uv = torch.dot(Lk1,Lk2)
 
-    NGroot = int(np.sqrt(nG))
-    if np.mod(NGroot,2) == 0:
+    NGroot = int(torch.sqrt(nG))
+    if torch.mod(NGroot,2) == 0:
         NGroot -= 1
         
     M = NGroot//2
 
-    xG = range(-M,NGroot-M)
-    G1,G2 = np.meshgrid(xG,xG,indexing='ij')
-    G1 = G1.flatten()
-    G2 = G2.flatten()
+    xG = torch.arange(-M,NGroot-M)
+    G1,G2 = torch.meshgrid(xG,xG,indexing='ij')
+    G1 = G1.flatten().to(device)
+    G2 = G2.flatten().to(device)
 
     # sorting
     Gl2 = G1**2*u**2+G2**2*v**2+2*G2*G1*uv
-    sort = np.argsort(Gl2)
+    sort = torch.argsort(Gl2)
     G1 = G1[sort]
     G2 = G2[sort]
 
     # final G
     nG = NGroot*NGroot    
-    G = np.zeros((nG,2),dtype=int)
+    G = torch.zeros((nG,2),dtype=int,device=device)
     G[:,0] = G1[:nG]
     G[:,1] = G2[:nG]    
 
     return G, nG
 
-def Gsel_circular(nG, Lk1, Lk2):
+def Gsel_circular(nG, Lk1, Lk2, device):
     '''From Liu's gsel.c.
     NG * |u x v| is approximately the area in k-space we will need
     cover with a circular disc. (u and v are the 2 shortest lattice
@@ -85,28 +85,28 @@ def Gsel_circular(nG, Lk1, Lk2):
     up). Then, we can find the minimum extends in each of the two
     lattice directions.
     '''
-    u = np.linalg.norm(Lk1)
-    v = np.linalg.norm(Lk2)
-    uv = np.dot(Lk1,Lk2)
+    u = torch.linalg.norm(Lk1)
+    v = torch.linalg.norm(Lk2)
+    uv = torch.dot(Lk1,Lk2)
     uxv = Lk1[0]*Lk2[1] - Lk1[1]*Lk2[0]
-    circ_area = nG * np.abs(uxv)
-    circ_radius = np.sqrt(circ_area/np.pi) + u+v;
+    circ_area = nG * torch.abs(uxv)
+    circ_radius = torch.sqrt(circ_area/torch.pi) + u+v;
 
-    u_extent = 1+int(circ_radius/(u*np.sqrt(1.-uv**2/(u*v)**2)))
-    v_extent = 1+int(circ_radius/(v*np.sqrt(1.-uv**2/(u*v)**2)))
+    u_extent = 1+int(circ_radius/(u*torch.sqrt(1.-uv**2/(u*v)**2)))
+    v_extent = 1+int(circ_radius/(v*torch.sqrt(1.-uv**2/(u*v)**2)))
 
-    uext21 = 2*u_extent+1;
-    vext21 = 2*v_extent+1;
+    uext21 = 2*u_extent+1
+    vext21 = 2*v_extent+1
 
-    xG = range(-u_extent,uext21-u_extent)
-    yG = range(-v_extent,vext21-v_extent)
-    G1,G2 = np.meshgrid(xG,yG,indexing='ij')
-    G1 = G1.flatten()
-    G2 = G2.flatten()
+    xG = torch.arange(-u_extent,uext21-u_extent)
+    yG = torch.arange(-v_extent,vext21-v_extent)
+    G1,G2 = torch.meshgrid(xG,yG,indexing='ij')
+    G1 = G1.flatten().to(device)
+    G2 = G2.flatten().to(device)
 
     # sorting
     Gl2 = G1**2*u**2+G2**2*v**2+2*G2*G1*uv
-    sort = np.argsort(Gl2)
+    sort = torch.argsort(Gl2)
     G1 = G1[sort]
     G2 = G2[sort]
     Gl2 = Gl2[sort]
@@ -119,12 +119,12 @@ def Gsel_circular(nG, Lk1, Lk2):
     # removing the part outside the cycle
     tol = 1e-10*max(u**2,v**2)
     for i in range(nGtmp-1,-1,-1):
-        if np.abs(Gl2[i]-Gl2[i-1])>tol:
-            break;
+        if torch.abs(Gl2[i]-Gl2[i-1])>tol:
+            break
     nG = i
     
     # final G
-    G = np.zeros((nG,2),dtype=int)
+    G = torch.zeros((nG,2),dtype=int, device=device)
     G[:,0] = G1[:nG]
     G[:,1] = G2[:nG]
 

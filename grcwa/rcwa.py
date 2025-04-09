@@ -79,7 +79,7 @@ class obj:
         self.Patterned_N += 1
         self.FourierLayer_N += 1
 
-    def Init_Setup(self,Pscale=1.,Gmethod=0):
+    def Init_Setup(self,device,Pscale=1.,Gmethod=0):
         '''
         Set up reciprocal lattice (Gmethod:truncation scheme, 0 for circular, 1 for rectangular)
         Pscale: scale the period
@@ -90,8 +90,8 @@ class obj:
         ky0 = self.omega*bd.sin(self.theta)*bd.sin(self.phi)*bd.sqrt(self.Uniform_ep_list[0])
 
         # set up reciprocal lattice
-        self.Lk1, self.Lk2 = Lattice_Reciprocate(self.L1,self.L2)
-        self.G,self.nG = Lattice_getG(self.nG,self.Lk1,self.Lk2,method=Gmethod)
+        self.Lk1, self.Lk2 = Lattice_Reciprocate(self.L1,self.L2, device=device)
+        self.G,self.nG = Lattice_getG(self.nG,self.Lk1,self.Lk2,device,method=Gmethod)
         
         self.Lk1 = self.Lk1/Pscale
         self.Lk2 = self.Lk2/Pscale
@@ -111,10 +111,10 @@ class obj:
         for i in range(self.Layer_N):
             if self.id_list[i][0] == 0:
                 ep = self.Uniform_ep_list[self.id_list[i][2]]
-                kp = MakeKPMatrix(self.omega,0,1./ep,self.kx,self.ky)
+                kp = MakeKPMatrix(self.omega,0,1./ep,self.kx,self.ky,device)
                 self.kp_list.append(kp)
                 
-                q,phi = SolveLayerEigensystem_uniform(self.omega,self.kx,self.ky,ep)
+                q,phi = SolveLayerEigensystem_uniform(self.omega,self.kx,self.ky,ep,device)
                 self.q_list.append(q)
                 self.phi_list.append(phi)
             else:
@@ -122,32 +122,32 @@ class obj:
                 self.q_list.append(None)
                 self.phi_list.append(None)
                 
-    def MakeExcitationPlanewave(self,p_amp,p_phase,s_amp,s_phase,order = 0, direction = 'forward'):
+    def MakeExcitationPlanewave(self,p_amp,p_phase,s_amp,s_phase,device,order = 0, direction = 'forward'):
         '''
         Front incidence
         '''
         self.direction = direction
         theta = self.theta
         phi = self.phi
-        a0 = bd.zeros(2*self.nG,dtype=complex)
-        bN = bd.zeros(2*self.nG,dtype=complex)
+        a0 = bd.zeros(2*self.nG,dtype=complex,device=device)
+        bN = bd.zeros(2*self.nG,dtype=complex,device=device)
         if direction == 'forward':
-            tmp1 = bd.zeros(2*self.nG,dtype=complex)
+            tmp1 = bd.zeros(2*self.nG,dtype=complex,device=device)
             tmp1[order] = 1.0
             a0 = a0 + tmp1*(-s_amp*bd.cos(theta)*bd.cos(phi)*bd.exp(1j*s_phase) \
                         -p_amp*bd.sin(phi)*bd.exp(1j*p_phase))
 
-            tmp2 = bd.zeros(2*self.nG,dtype=complex)
+            tmp2 = bd.zeros(2*self.nG,dtype=complex,device=device)
             tmp2[order+self.nG] = 1.0            
             a0 = a0 + tmp2*(-s_amp*bd.cos(theta)*bd.sin(phi)*bd.exp(1j*s_phase) \
                             +p_amp*bd.cos(phi)*bd.exp(1j*p_phase))
         elif direction == 'backward':
-            tmp1 = bd.zeros(2*self.nG,dtype=complex)
+            tmp1 = bd.zeros(2*self.nG,dtype=complex,device=device)
             tmp1[order] = 1.0
             bN = bN + tmp1*(-s_amp*bd.cos(theta)*bd.cos(phi)*bd.exp(1j*s_phase) \
                             -p_amp*bd.sin(phi)*bd.exp(1j*p_phase))
 
-            tmp2 = bd.zeros(2*self.nG,dtype=complex)
+            tmp2 = bd.zeros(2*self.nG,dtype=complex,device=device)
             tmp2[order+self.nG] = 1.0
             bN = bN + tmp2*(-s_amp*bd.cos(theta)*bd.sin(phi)*bd.exp(1j*s_phase) \
                             +p_amp*bd.cos(phi)*bd.exp(1j*p_phase))
@@ -155,7 +155,7 @@ class obj:
         self.a0 = a0
         self.bN = bN
         
-    def GridLayer_geteps(self,ep_all):
+    def GridLayer_geteps(self,ep_all,device):
         '''
         Fourier transform + eigenvalue for grid layer
         '''
@@ -179,7 +179,7 @@ class obj:
             self.Patterned_epinv_list[self.id_list[i][2]] = epinv
             self.Patterned_ep2_list[self.id_list[i][2]] = ep2
 
-            kp = MakeKPMatrix(self.omega,1,epinv,self.kx,self.ky)
+            kp = MakeKPMatrix(self.omega,1,epinv,self.kx,self.ky,device)
             self.kp_list[self.id_list[i][1]] = kp
 
             q,phi = SolveLayerEigensystem(self.omega,self.kx,self.ky,kp,ep2)
@@ -216,7 +216,7 @@ class obj:
             return get_ifft(Nx,Ny,epk[0,:],self.G)
 
             
-    def RT_Solve(self,normalize = 0, byorder = 0):
+    def RT_Solve(self,device, normalize = 0, byorder = 0):
         '''
         Reflection and transmission power computation
         Returns 2R and 2T, following Victor's notation
@@ -224,7 +224,7 @@ class obj:
 
         if normalize = 1, it will be divided by n[0]*cos(theta)
         '''
-        aN, b0 = SolveExterior(self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list)
+        aN, b0 = SolveExterior(self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list,device)
         fi,bi = GetZPoyntingFlux(self.a0,b0,self.omega,self.kp_list[0],self.phi_list[0],self.q_list[0],byorder=byorder)
         fe,be = GetZPoyntingFlux(aN,self.bN,self.omega,self.kp_list[-1],self.phi_list[-1],self.q_list[-1],byorder=byorder)
 
@@ -240,22 +240,22 @@ class obj:
             T = T*self.normalization
         return R,T
 
-    def GetAmplitudes_noTranslate(self,which_layer):
+    def GetAmplitudes_noTranslate(self,which_layer,device):
         '''
         returns fourier amplitude
         '''
         if which_layer == 0 :
-            aN, b0 = SolveExterior(self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list)
+            aN, b0 = SolveExterior(self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list,device)
             ai = self.a0
             bi = b0
 
         elif which_layer == self.Layer_N-1:
-            aN, b0 = SolveExterior(self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list)
+            aN, b0 = SolveExterior(self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list,device)
             ai = aN
             bi = self.bN
 
         else:
-            ai, bi = SolveInterior(which_layer,self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list)
+            ai, bi = SolveInterior(which_layer,self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list,device)
         return ai,bi
     
     def GetAmplitudes(self,which_layer,z_offset):
@@ -348,10 +348,12 @@ class obj:
         return eh
 
     def Volume_integral(self,which_layer,Mx,My,Mz,normalize=0):
-        '''Mxyz is convolution matrix.
+        '''
+        Mxyz is convolution matrix.
         This function computes 1/A\int_V Mx|Ex|^2+My|Ey|^2+Mz|Ez|^2
         To be consistent with Poynting vector defintion here, the absorbed power will be just omega*output
         '''
+
         kp = self.kp_list[which_layer]
         q = self.q_list[which_layer]
         phi = self.phi_list[which_layer]
@@ -434,7 +436,7 @@ class obj:
 
         return Tx,Ty,Tz
 
-def MakeKPMatrix(omega,layer_type,epinv,kx,ky):
+def MakeKPMatrix(omega,layer_type,epinv,kx,ky,device):
     nG = len(kx)
     
     # uniform layer, epinv has length 1
@@ -445,23 +447,23 @@ def MakeKPMatrix(omega,layer_type,epinv,kx,ky):
         Jk = bd.vstack((bd.diag(-ky),bd.diag(kx)))
         JkkJT = bd.dot(Jk,bd.transpose(Jk))
         
-        kp = omega**2*bd.eye(2*nG) - epinv*JkkJT
+        kp = omega**2*bd.eye(2*nG, device=device) - epinv*JkkJT
     # patterned layer
     else:
         Jk = bd.vstack((bd.diag(-ky),bd.diag(kx)))
         tmp = bd.dot(Jk,epinv)
-        kp = omega**2*bd.eye(2*nG) - bd.dot(tmp,bd.transpose(Jk))
+        kp = omega**2*bd.eye(2*nG, device=device) - bd.dot(tmp,bd.transpose(Jk))
         
     return kp
 
-def SolveLayerEigensystem_uniform(omega,kx,ky,epsilon):
+def SolveLayerEigensystem_uniform(omega,kx,ky,epsilon,device):
     nG = len(kx)
     q = bd.sqrt(epsilon*omega**2 - kx**2 - ky**2)
     # branch cut choice
     q = bd.where(bd.imag(q)<0.,-q,q)
 
     q = bd.concatenate((q,q))
-    phi = bd.eye(2*nG)
+    phi = bd.eye(2*nG, dtype=complex, device=device)
     return q,phi
 
 def SolveLayerEigensystem(omega,kx,ky,kp,ep2):
@@ -478,17 +480,17 @@ def SolveLayerEigensystem(omega,kx,ky,kp,ep2):
     q = bd.where(bd.imag(q)<0.,-q,q)
     return q,phi
 
-def GetSMatrix(indi,indj,q_list,phi_list,kp_list,thickness_list):
+def GetSMatrix(indi,indj,q_list,phi_list,kp_list,thickness_list,device):
     ''' S_ij: size 4n*4n
     '''
     #assert type(indi) == int, 'layer index i must be integar'
     #assert type(indj) == int, 'layer index j must be integar'
     
     nG2 = len(q_list[0])
-    S11 = bd.eye(nG2,dtype=complex)
+    S11 = bd.eye(nG2,dtype=complex,device=device)
     S12 = bd.zeros_like(S11)
     S21 = bd.zeros_like(S11)
-    S22 = bd.eye(nG2,dtype=complex)
+    S22 = bd.eye(nG2,dtype=complex,device=device)
     if indi == indj:
         return S11,S12,S21,S22
     elif indi>indj:
@@ -536,20 +538,20 @@ def GetSMatrix(indi,indj,q_list,phi_list,kp_list,thickness_list):
         
     return S11,S12,S21,S22
 
-def SolveExterior(a0,bN,q_list,phi_list,kp_list,thickness_list):
+def SolveExterior(a0,bN,q_list,phi_list,kp_list,thickness_list,device):
     '''
     Given a0, bN, solve for b0, aN
     '''
 
     Nlayer = len(thickness_list) # total number of layers
-    S11, S12, S21, S22 = GetSMatrix(0,Nlayer-1,q_list,phi_list,kp_list,thickness_list)
+    S11, S12, S21, S22 = GetSMatrix(0,Nlayer-1,q_list,phi_list,kp_list,thickness_list,device)
 
     aN = bd.dot(S11,a0) + bd.dot(S12,bN)
     b0 = bd.dot(S21,a0) + bd.dot(S22,bN)
 
     return aN,b0
 
-def SolveInterior(which_layer,a0,bN,q_list,phi_list,kp_list,thickness_list):
+def SolveInterior(which_layer,a0,bN,q_list,phi_list,kp_list,thickness_list,device):
     '''
     Given a0, bN, solve for ai, bi
     Layer numbering starts from 0
@@ -557,8 +559,8 @@ def SolveInterior(which_layer,a0,bN,q_list,phi_list,kp_list,thickness_list):
     Nlayer = len(thickness_list) # total number of layers
     nG2 = len(q_list[0])
     
-    S11, S12, S21, S22 = GetSMatrix(0,which_layer,q_list,phi_list,kp_list,thickness_list)
-    pS11, pS12, pS21, pS22 = GetSMatrix(which_layer,Nlayer-1,q_list,phi_list,kp_list,thickness_list)
+    S11, S12, S21, S22 = GetSMatrix(0,which_layer,q_list,phi_list,kp_list,thickness_list,device)
+    pS11, pS12, pS21, pS22 = GetSMatrix(which_layer,Nlayer-1,q_list,phi_list,kp_list,thickness_list,device)
 
     # tmp = inv(1-S12*pS21)
     tmp = bd.inv(bd.eye(nG2)-bd.dot(S12,pS21))

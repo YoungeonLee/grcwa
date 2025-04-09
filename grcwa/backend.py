@@ -8,6 +8,8 @@ try:
 except ImportError:
     AG_AVAILABLE = False
 
+import torch
+
 class NumpyBackend():
     """ Numpy Backend """
     isinstance = staticmethod(isinstance)
@@ -85,8 +87,49 @@ if AG_AVAILABLE:
         real = staticmethod(npa.real)
         imag = staticmethod(npa.imag)
         abs = staticmethod(npa.abs)
+    
+def torch_transpose(tensor):
+    return tensor.T
+    
+class TorchBackend():
+    """ PyTorch Backend """
+    isinstance = staticmethod(isinstance)
+    pi = staticmethod(torch.pi)
+    tensor = staticmethod(torch.tensor)
 
-backend = NumpyBackend()
+    array = staticmethod(torch.tensor)
+    sum = staticmethod(torch.sum)
+    vstack = staticmethod(torch.vstack)
+    hstack = staticmethod(torch.hstack)
+    zeros_like = staticmethod(torch.zeros_like)
+    zeros = staticmethod(torch.zeros)
+    ones = staticmethod(torch.ones)
+    meshgrid = staticmethod(torch.meshgrid)
+    reshape = staticmethod(torch.reshape)
+    where = staticmethod(torch.where)
+    concatenate = staticmethod(torch.cat)
+    eye = staticmethod(torch.eye)
+    diag = staticmethod(torch.diag)        
+    transpose = staticmethod(torch_transpose)                
+        
+    eig = staticmethod(torch.linalg.eig)
+    inv = staticmethod(torch.inverse)
+    dot = staticmethod(torch.matmul)  # Use matmul for dot product
+    outer = staticmethod(torch.ger)   # Use ger for outer product
+    conj = staticmethod(torch.conj)
+    trace = staticmethod(torch.trace)
+    fft2 = staticmethod(torch.fft.fft2)
+    ifft2 = staticmethod(torch.fft.ifft2)
+
+    sin = staticmethod(torch.sin)
+    cos = staticmethod(torch.cos)
+    exp = staticmethod(torch.exp)
+    sqrt = staticmethod(torch.sqrt)
+    real = staticmethod(torch.real)
+    imag = staticmethod(torch.imag)
+    abs = staticmethod(torch.abs)
+
+backend = TorchBackend()
 
 def set_backend(name):
     """
