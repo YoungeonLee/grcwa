@@ -1,6 +1,10 @@
 from . import backend as bd
 from .fft_funs import Epsilon_fft,get_ifft
 from .kbloch import Lattice_Reciprocate,Lattice_getG,Lattice_SetKs
+import torch
+
+global old
+old = False
 
 class obj:
     def __init__(self,nG,L1,L2,freq,theta,phi,verbose=1):
@@ -16,6 +20,9 @@ class obj:
 
         '''
         self.freq = freq
+        global old
+        if freq.shape == torch.tensor([1]).shape:
+            old = True
         self.omega = 2*bd.pi*freq+0.j
         self.L1 = L1
         self.L2 = L2
@@ -98,7 +105,7 @@ class obj:
         # self.kx = kx0 + 2*bd.pi*(self.Lk1[0]*self.G[:,0]+self.Lk2[0]*self.G[:,1])
         # self.ky = ky0 + 2*bd.pi*(self.Lk1[1]*self.G[:,0]+self.Lk2[1]*self.G[:,1])
         self.kx,self.ky = Lattice_SetKs(self.G, kx0, ky0, self.Lk1, self.Lk2)
-        
+
         #normalization factor for energies off normal incidence
         self.normalization = bd.sqrt(self.Uniform_ep_list[0])/bd.cos(self.theta)
         
@@ -121,6 +128,7 @@ class obj:
                 self.kp_list.append(None)
                 self.q_list.append(None)
                 self.phi_list.append(None)
+        # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi
                 
     def MakeExcitationPlanewave(self,p_amp,p_phase,s_amp,s_phase,device,order = 0, direction = 'forward'):
         '''
@@ -154,7 +162,9 @@ class obj:
         
         self.a0 = a0
         self.bN = bN
-        
+
+        # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi
+
     def GridLayer_geteps(self,ep_all,device):
         '''
         Fourier transform + eigenvalue for grid layer
@@ -173,7 +183,6 @@ class obj:
                 ep_grid = [bd.reshape(ep_all[0][ptr:ptr+Nx*Ny],[Nx,Ny]),bd.reshape(ep_all[1][ptr:ptr+Nx*Ny],[Nx,Ny]),bd.reshape(ep_all[2][ptr:ptr+Nx*Ny],[Nx,Ny])]
             else:
                 ep_grid = bd.reshape(ep_all[ptr:ptr+Nx*Ny],[Nx,Ny])
-            
             epinv, ep2 = Epsilon_fft(dN,ep_grid,self.G)
 
             self.Patterned_epinv_list[self.id_list[i][2]] = epinv
@@ -187,7 +196,8 @@ class obj:
             self.phi_list[self.id_list[i][1]] = phi
 
             ptr += Nx*Ny
-            ptri += 1            
+            ptri += 1
+        # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q eigenvectors dot consistant         
 
     def Return_eps(self,which_layer,Nx,Ny,component='xx'):
         '''
@@ -225,6 +235,7 @@ class obj:
         if normalize = 1, it will be divided by n[0]*cos(theta)
         '''
         aN, b0 = SolveExterior(self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list,device)
+        # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q eigenvectors dot consistant
         fi,bi = GetZPoyntingFlux(self.a0,b0,self.omega,self.kp_list[0],self.phi_list[0],self.q_list[0],byorder=byorder)
         fe,be = GetZPoyntingFlux(aN,self.bN,self.omega,self.kp_list[-1],self.phi_list[-1],self.q_list[-1],byorder=byorder)
 
@@ -437,56 +448,89 @@ class obj:
         return Tx,Ty,Tz
 
 def MakeKPMatrix(omega,layer_type,epinv,kx,ky,device):
-    nG = len(kx)
-    
+    nG = kx.shape[-1]
+    global old
     # uniform layer, epinv has length 1
     if layer_type == 0:
         # JkkJT = np.block([[np.diag(ky*ky), np.diag(-ky*kx)],
         #                 [np.diag(-kx*ky),np.diag(kx*kx)]])
 
-        Jk = bd.vstack((bd.diag(-ky),bd.diag(kx)))
-        JkkJT = bd.dot(Jk,bd.transpose(Jk))
-        
-        kp = omega**2*bd.eye(2*nG, device=device) - epinv*JkkJT
+        if old:
+            Jk = bd.vstack((bd.diag(-ky),bd.diag(kx)))  # [586, 293]
+            JkkJT = bd.dot(Jk,bd.transpose(Jk)) # [586, 586]
+            kp = omega**2*bd.eye(2*nG, device=device) - epinv*JkkJT
+        else:
+            Jk = torch.cat((bd.diag(-ky),bd.diag(kx)), dim=1)
+            JkkJT = bd.dot(Jk,Jk.transpose(1, 2))
+            kp = omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0) - epinv*JkkJT
+
     # patterned layer
     else:
-        Jk = bd.vstack((bd.diag(-ky),bd.diag(kx)))
-        tmp = bd.dot(Jk,epinv)
-        kp = omega**2*bd.eye(2*nG, device=device) - bd.dot(tmp,bd.transpose(Jk))
+        if old:
+            Jk = bd.vstack((bd.diag(-ky),bd.diag(kx)))
+            tmp = bd.dot(Jk,epinv)
+            kp = omega**2*bd.eye(2*nG, device=device) - bd.dot(tmp,bd.transpose(Jk))
+        else:
+            Jk = torch.cat((bd.diag(-ky),bd.diag(kx)), dim=1)
+            tmp = bd.dot(Jk,epinv)
+            kp = omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0) - bd.dot(tmp,Jk.transpose(1, 2))
         
+    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp
     return kp
 
 def SolveLayerEigensystem_uniform(omega,kx,ky,epsilon,device):
-    nG = len(kx)
+    nG = kx.shape[-1]
+
     q = bd.sqrt(epsilon*omega**2 - kx**2 - ky**2)
     # branch cut choice
     q = bd.where(bd.imag(q)<0.,-q,q)
-
-    q = bd.concatenate((q,q))
-    phi = bd.eye(2*nG, dtype=complex, device=device)
+    global old
+    if old:
+        q = bd.concatenate((q,q))
+        phi = bd.eye(2*nG, dtype=complex, device=device)
+    else:
+        q = bd.concatenate((q,q), dim=1)
+        phi = bd.eye(2*nG, dtype=complex, device=device).unsqueeze(0)
+    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi
     return q,phi
 
 def SolveLayerEigensystem(omega,kx,ky,kp,ep2):
-    nG = len(kx)
+    nG = kx.shape[-1]
     
-    k = bd.vstack((bd.diag(kx),bd.diag(ky)))
-    kkT = bd.dot(k,bd.transpose(k))
-    M = bd.dot(ep2,kp) - kkT
-    
-    q,phi = bd.eig(M)
+    global old
+    if old:
+        k = bd.vstack((bd.diag(kx),bd.diag(ky)))
+        kkT = bd.dot(k,bd.transpose(k))
+        M = bd.dot(ep2,kp) - kkT
+        
+        q,phi = bd.eig(M)
+        
+        q = bd.sqrt(q)
+        # branch cut choice
+        q = bd.where(bd.imag(q)<0.,-q,q)
+    else:
+        k = torch.cat((bd.diag(kx),bd.diag(ky)), dim=1)
+        kkT = bd.dot(k,k.transpose(1, 2))
+        M = bd.dot(ep2,kp) - kkT
 
-    q = bd.sqrt(q)
-    # branch cut choice
-    q = bd.where(bd.imag(q)<0.,-q,q)
+        q,phi = bd.eig(M)
+
+        q = bd.sqrt(q)
+        # branch cut choice
+        q = bd.where(bd.imag(q)<0.,-q,q)
+    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q eigenvectors dot consistant
+
     return q,phi
 
 def GetSMatrix(indi,indj,q_list,phi_list,kp_list,thickness_list,device):
     ''' S_ij: size 4n*4n
     '''
+    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q eigenvectors dot consistant
+
     #assert type(indi) == int, 'layer index i must be integar'
     #assert type(indj) == int, 'layer index j must be integar'
-    
-    nG2 = len(q_list[0])
+
+    nG2 = q_list[0].shape[-1]
     S11 = bd.eye(nG2,dtype=complex,device=device)
     S12 = bd.zeros_like(S11)
     S21 = bd.zeros_like(S11)
@@ -536,6 +580,7 @@ def GetSMatrix(indi,indj,q_list,phi_list,kp_list,thickness_list,device):
         P1 = bd.dot(S22,bd.dot(T11,d2))
         S22 = P1 + P2
         
+            # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q, Q eigenvectors dot consistant
     return S11,S12,S21,S22
 
 def SolveExterior(a0,bN,q_list,phi_list,kp_list,thickness_list,device):
@@ -548,7 +593,8 @@ def SolveExterior(a0,bN,q_list,phi_list,kp_list,thickness_list,device):
 
     aN = bd.dot(S11,a0) + bd.dot(S12,bN)
     b0 = bd.dot(S21,a0) + bd.dot(S22,bN)
-
+    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q eigenvectors dot consistant
+    
     return aN,b0
 
 def SolveInterior(which_layer,a0,bN,q_list,phi_list,kp_list,thickness_list,device):
@@ -587,10 +633,19 @@ def GetZPoyntingFlux(ai,bi,omega,kp,phi,q,byorder=0):
     # A = kp phi inv(omega*q)
     A = bd.dot(bd.dot(kp,phi),  bd.diag(1./omega/q))
 
-    pa = bd.dot(phi,ai)
-    pb = bd.dot(phi,bi)
-    Aa = bd.dot(A,ai)
-    Ab = bd.dot(A,bi)
+    global old
+    if old:
+        pa = bd.dot(phi,ai)
+        pb = bd.dot(phi,bi)
+        Aa = bd.dot(A,ai)
+        Ab = bd.dot(A,bi)
+    else:
+        ai = ai.unsqueeze(-1)
+        bi = bi.unsqueeze(-1)
+        pa = bd.dot(phi,ai).squeeze(-1)
+        pb = bd.dot(phi,bi).squeeze(-1)
+        Aa = bd.dot(A,ai).squeeze(-1)
+        Ab = bd.dot(A,bi).squeeze(-1)
 
     # diff = 0.5*(pb* Aa - Ab* pa)
     diff = 0.5*(bd.conj(pb)*Aa-bd.conj(Ab)*pa)
@@ -598,12 +653,22 @@ def GetZPoyntingFlux(ai,bi,omega,kp,phi,q,byorder=0):
     forward_xy = bd.real(bd.conj(Aa)*pa) + diff
     backward_xy = -bd.real(bd.conj(Ab)*pb) + bd.conj(diff)
 
-    forward = forward_xy[:n] + forward_xy[n:]
-    backward = backward_xy[:n] + backward_xy[n:]
-    if byorder == 0:
-        forward = bd.sum(forward)
-        backward = bd.sum(backward)
+    if old:
+        forward = forward_xy[:n] + forward_xy[n:]
+        backward = backward_xy[:n] + backward_xy[n:]
 
+        if byorder == 0:
+            forward = bd.sum(forward)
+            backward = bd.sum(backward)
+    else:
+        forward = forward_xy[:,:n] + forward_xy[:,n:]
+        backward = backward_xy[:,:n] + backward_xy[:,n:]
+
+        if byorder == 0:
+            forward = bd.sum(forward, dim=1)
+            backward = bd.sum(backward, dim=1)
+
+    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, forward, backward, q eigenvectors dot consistant
     return forward, backward
 
 def Matrix_zintegral(q,thickness,shift=1e-12):

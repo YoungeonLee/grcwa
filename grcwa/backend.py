@@ -109,7 +109,7 @@ class TorchBackend():
     where = staticmethod(torch.where)
     concatenate = staticmethod(torch.cat)
     eye = staticmethod(torch.eye)
-    diag = staticmethod(torch.diag)        
+    diag = staticmethod(torch.diag_embed)        
     transpose = staticmethod(torch_transpose)                
         
     eig = staticmethod(torch.linalg.eig)
