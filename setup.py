@@ -41,9 +41,9 @@ setup(
     license="GPL license",
     long_description=readme + '\n\n' + history,
     include_package_data=True,
-    keywords='grcwa',
-    name='grcwa',
+    keywords='grcwa_torch',
+    name='grcwa_torch',
     packages=find_packages(),
     url='https://github.com/weiliangjinca/grcwa',
-    version=find_version('grcwa', '__init__.py'),
+    version=find_version('grcwa_torch', '__init__.py'),
 )
