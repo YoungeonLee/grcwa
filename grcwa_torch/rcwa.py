@@ -5,9 +5,11 @@ import torch
 
 global old
 old = False
+global eps_batch
+eps_batch = False
 
 class obj:
-    def __init__(self,nG,L1,L2,freq,theta,phi,verbose=1):
+    def __init__(self,nG,L1,L2,freq,theta,phi,verbose=1,eps_batch_=False):
         '''The time harmonic convention is exp(-i omega t), speed of light = 1
 
         Two kinds of layers are currently supported: uniform layer,
@@ -21,8 +23,11 @@ class obj:
         '''
         self.freq = freq
         global old
+        global eps_batch
         if freq.shape == torch.tensor([1]).shape:
             old = True
+        else:
+            eps_batch = eps_batch_
         self.omega = 2*bd.pi*freq+0.j
         self.L1 = L1
         self.L2 = L2
@@ -107,7 +112,7 @@ class obj:
         self.kx,self.ky = Lattice_SetKs(self.G, kx0, ky0, self.Lk1, self.Lk2)
 
         #normalization factor for energies off normal incidence
-        self.normalization = bd.sqrt(self.Uniform_ep_list[0])/bd.cos(self.theta)
+        self.normalization = bd.sqrt(self.Uniform_ep_list[0].mean())/bd.cos(self.theta) # may be wrong
         
         #if comm.rank == 0 and verbose>0:
         if self.verbose>0:
@@ -128,7 +133,6 @@ class obj:
                 self.kp_list.append(None)
                 self.q_list.append(None)
                 self.phi_list.append(None)
-        # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi
                 
     def MakeExcitationPlanewave(self,p_amp,p_phase,s_amp,s_phase,device,order = 0, direction = 'forward'):
         '''
@@ -163,14 +167,13 @@ class obj:
         self.a0 = a0
         self.bN = bN
 
-        # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi
-
     def GridLayer_geteps(self,ep_all,device):
         '''
         Fourier transform + eigenvalue for grid layer
         '''
         ptri = 0
         ptr = 0
+        global eps_batch
         for i in range(self.Layer_N):
             if self.id_list[i][0] != 1:
                 continue
@@ -179,12 +182,18 @@ class obj:
             Ny = self.GridLayer_Nxy_list[ptri][1]
             dN = 1./Nx/Ny
 
-            if len(ep_all) == 3 and ep_all[0].ndim>0:
-                ep_grid = [bd.reshape(ep_all[0][ptr:ptr+Nx*Ny],[Nx,Ny]),bd.reshape(ep_all[1][ptr:ptr+Nx*Ny],[Nx,Ny]),bd.reshape(ep_all[2][ptr:ptr+Nx*Ny],[Nx,Ny])]
+            if eps_batch:
+                if ep_all.shape[-1] == 3 and ep_all[0][0].ndim>0:
+                    raise NotImplementedError
+                else:
+                    ep_grid = ep_all[:,ptr:ptr+Nx*Ny].reshape(-1, Nx, Ny)
             else:
-                ep_grid = bd.reshape(ep_all[ptr:ptr+Nx*Ny],[Nx,Ny])
-            epinv, ep2 = Epsilon_fft(dN,ep_grid,self.G)
+                if len(ep_all) == 3 and ep_all[0].ndim>0:
+                    ep_grid = [bd.reshape(ep_all[0][ptr:ptr+Nx*Ny],[Nx,Ny]),bd.reshape(ep_all[1][ptr:ptr+Nx*Ny],[Nx,Ny]),bd.reshape(ep_all[2][ptr:ptr+Nx*Ny],[Nx,Ny])]
+                else:
+                    ep_grid = bd.reshape(ep_all[ptr:ptr+Nx*Ny],[Nx,Ny])
 
+            epinv, ep2 = Epsilon_fft(dN,ep_grid,self.G, batch_eps=eps_batch)
             self.Patterned_epinv_list[self.id_list[i][2]] = epinv
             self.Patterned_ep2_list[self.id_list[i][2]] = ep2
 
@@ -197,7 +206,6 @@ class obj:
 
             ptr += Nx*Ny
             ptri += 1
-        # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q eigenvectors dot consistant         
 
     def Return_eps(self,which_layer,Nx,Ny,component='xx'):
         '''
@@ -235,7 +243,6 @@ class obj:
         if normalize = 1, it will be divided by n[0]*cos(theta)
         '''
         aN, b0 = SolveExterior(self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list,device)
-        # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q eigenvectors dot consistant
         fi,bi = GetZPoyntingFlux(self.a0,b0,self.omega,self.kp_list[0],self.phi_list[0],self.q_list[0],byorder=byorder)
         fe,be = GetZPoyntingFlux(aN,self.bN,self.omega,self.kp_list[-1],self.phi_list[-1],self.q_list[-1],byorder=byorder)
 
@@ -462,7 +469,7 @@ def MakeKPMatrix(omega,layer_type,epinv,kx,ky,device):
         else:
             Jk = torch.cat((bd.diag(-ky),bd.diag(kx)), dim=1)
             JkkJT = bd.dot(Jk,Jk.transpose(1, 2))
-            kp = omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0) - epinv*JkkJT
+            kp = omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0) - epinv.unsqueeze(-1)*JkkJT
 
     # patterned layer
     else:
@@ -474,8 +481,7 @@ def MakeKPMatrix(omega,layer_type,epinv,kx,ky,device):
             Jk = torch.cat((bd.diag(-ky),bd.diag(kx)), dim=1)
             tmp = bd.dot(Jk,epinv)
             kp = omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0) - bd.dot(tmp,Jk.transpose(1, 2))
-        
-    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp
+
     return kp
 
 def SolveLayerEigensystem_uniform(omega,kx,ky,epsilon,device):
@@ -491,7 +497,7 @@ def SolveLayerEigensystem_uniform(omega,kx,ky,epsilon,device):
     else:
         q = bd.concatenate((q,q), dim=1)
         phi = bd.eye(2*nG, dtype=complex, device=device).unsqueeze(0)
-    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi
+
     return q,phi
 
 def SolveLayerEigensystem(omega,kx,ky,kp,ep2):
@@ -518,15 +524,12 @@ def SolveLayerEigensystem(omega,kx,ky,kp,ep2):
         q = bd.sqrt(q)
         # branch cut choice
         q = bd.where(bd.imag(q)<0.,-q,q)
-    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q eigenvectors dot consistant
 
     return q,phi
 
 def GetSMatrix(indi,indj,q_list,phi_list,kp_list,thickness_list,device):
     ''' S_ij: size 4n*4n
     '''
-    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q eigenvectors dot consistant
-
     #assert type(indi) == int, 'layer index i must be integar'
     #assert type(indj) == int, 'layer index j must be integar'
 
@@ -580,20 +583,17 @@ def GetSMatrix(indi,indj,q_list,phi_list,kp_list,thickness_list,device):
         P1 = bd.dot(S22,bd.dot(T11,d2))
         S22 = P1 + P2
         
-            # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q, Q eigenvectors dot consistant
     return S11,S12,S21,S22
 
 def SolveExterior(a0,bN,q_list,phi_list,kp_list,thickness_list,device):
     '''
     Given a0, bN, solve for b0, aN
     '''
-
     Nlayer = len(thickness_list) # total number of layers
     S11, S12, S21, S22 = GetSMatrix(0,Nlayer-1,q_list,phi_list,kp_list,thickness_list,device)
 
     aN = bd.dot(S11,a0) + bd.dot(S12,bN)
     b0 = bd.dot(S21,a0) + bd.dot(S22,bN)
-    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, q eigenvectors dot consistant
     
     return aN,b0
 
@@ -668,7 +668,6 @@ def GetZPoyntingFlux(ai,bi,omega,kp,phi,q,byorder=0):
             forward = bd.sum(forward, dim=1)
             backward = bd.sum(backward, dim=1)
 
-    # modified: omega, kx0, ky0, self.kx, self.ky, Jk, JkkJT, kp, q, phi, forward, backward, q eigenvectors dot consistant
     return forward, backward
 
 def Matrix_zintegral(q,thickness,shift=1e-12):
