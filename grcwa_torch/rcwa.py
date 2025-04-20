@@ -628,7 +628,7 @@ def GetZPoyntingFlux(ai,bi,omega,kp,phi,q,byorder=0):
      Returns 2S_z/A, following Victor's notation
      Maybe because 2* makes S_z = 1 for H=1 in vacuum
     '''
-    n2 = len(ai)
+    n2 = ai.shape[-1]
     n = int(n2/2)
     # A = kp phi inv(omega*q)
     A = bd.dot(bd.dot(kp,phi),  bd.diag(1./omega/q))
