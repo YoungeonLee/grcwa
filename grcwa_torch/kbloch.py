@@ -34,14 +34,17 @@ def Lattice_getG(nG,Lk1,Lk2,device,method=0):
 
     return G,nG
 
-def Lattice_SetKs(G, kx0, ky0, Lk1, Lk2):
+def Lattice_SetKs(G, kx0, ky0, Lk1, Lk2, theta_batch):
     '''
     Construct kx,ky including all relevant orders, given initial scalar kx,ky
     2pi factor is now included in the returned kx,ky
     '''
-
-    kx = kx0 + 2*torch.pi*(Lk1[0]*G[:,0]+Lk2[0]*G[:,1])
-    ky = ky0 + 2*torch.pi*(Lk1[1]*G[:,0]+Lk2[1]*G[:,1])
+    if theta_batch:
+        kx = kx0.unsqueeze(-1) + 2*torch.pi*(Lk1[0]*G[:,0]+Lk2[0]*G[:,1])
+        ky = ky0.unsqueeze(-1) + 2*torch.pi*(Lk1[1]*G[:,0]+Lk2[1]*G[:,1])
+    else:
+        kx = kx0 + 2*torch.pi*(Lk1[0]*G[:,0]+Lk2[0]*G[:,1])
+        ky = ky0 + 2*torch.pi*(Lk1[1]*G[:,0]+Lk2[1]*G[:,1])
 
     return kx,ky
 

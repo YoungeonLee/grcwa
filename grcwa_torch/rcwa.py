@@ -7,6 +7,8 @@ global old
 old = False
 global eps_batch
 eps_batch = False
+global theta_batch
+theta_batch = False
 
 class obj:
     def __init__(self,nG,L1,L2,freq,theta,phi,verbose=1,eps_batch_=False):
@@ -24,10 +26,13 @@ class obj:
         self.freq = freq
         global old
         global eps_batch
+        global theta_batch
         if freq.shape == torch.tensor([1]).shape:
             old = True
         else:
             eps_batch = eps_batch_
+        if theta.shape != torch.tensor(1).shape:
+            theta_batch = True
         self.omega = 2*bd.pi*freq+0.j
         self.L1 = L1
         self.L2 = L2
@@ -98,8 +103,12 @@ class obj:
         Compute eigenvalues for uniform layers
         Initialize vectors for patterned layers
         '''
-        kx0 = self.omega*bd.sin(self.theta)*bd.cos(self.phi)*bd.sqrt(self.Uniform_ep_list[0])
-        ky0 = self.omega*bd.sin(self.theta)*bd.sin(self.phi)*bd.sqrt(self.Uniform_ep_list[0])
+        if theta_batch:
+            kx0 = self.omega*bd.sqrt(self.Uniform_ep_list[0])*bd.sin(self.theta)*bd.cos(self.phi)
+            ky0 = self.omega*bd.sqrt(self.Uniform_ep_list[0])*bd.sin(self.theta)*bd.sin(self.phi)
+        else:
+            kx0 = self.omega*bd.sin(self.theta)*bd.cos(self.phi)*bd.sqrt(self.Uniform_ep_list[0])
+            ky0 = self.omega*bd.sin(self.theta)*bd.sin(self.phi)*bd.sqrt(self.Uniform_ep_list[0])
 
         # set up reciprocal lattice
         self.Lk1, self.Lk2 = Lattice_Reciprocate(self.L1,self.L2, device=device)
@@ -109,10 +118,10 @@ class obj:
         self.Lk2 = self.Lk2/Pscale
         # self.kx = kx0 + 2*bd.pi*(self.Lk1[0]*self.G[:,0]+self.Lk2[0]*self.G[:,1])
         # self.ky = ky0 + 2*bd.pi*(self.Lk1[1]*self.G[:,0]+self.Lk2[1]*self.G[:,1])
-        self.kx,self.ky = Lattice_SetKs(self.G, kx0, ky0, self.Lk1, self.Lk2)
+        self.kx,self.ky = Lattice_SetKs(self.G, kx0, ky0, self.Lk1, self.Lk2, theta_batch=theta_batch)
 
         #normalization factor for energies off normal incidence
-        self.normalization = bd.sqrt(self.Uniform_ep_list[0].mean())/bd.cos(self.theta) # may be wrong
+        self.normalization = bd.sqrt(self.Uniform_ep_list[0])/bd.cos(self.theta)
         
         #if comm.rank == 0 and verbose>0:
         if self.verbose>0:
@@ -141,28 +150,47 @@ class obj:
         self.direction = direction
         theta = self.theta
         phi = self.phi
-        a0 = bd.zeros(2*self.nG,dtype=complex,device=device)
-        bN = bd.zeros(2*self.nG,dtype=complex,device=device)
+        global theta_batch
+        if theta_batch:
+            a0 = bd.zeros(2*self.nG,dtype=complex,device=device).unsqueeze(0)
+            bN = bd.zeros(2*self.nG,dtype=complex,device=device).unsqueeze(0)
+        else:
+            a0 = bd.zeros(2*self.nG,dtype=complex,device=device)
+            bN = bd.zeros(2*self.nG,dtype=complex,device=device)
         if direction == 'forward':
             tmp1 = bd.zeros(2*self.nG,dtype=complex,device=device)
             tmp1[order] = 1.0
-            a0 = a0 + tmp1*(-s_amp*bd.cos(theta)*bd.cos(phi)*bd.exp(1j*s_phase) \
-                        -p_amp*bd.sin(phi)*bd.exp(1j*p_phase))
-
+            if theta_batch:
+                a0 = a0 + tmp1.unsqueeze(0)*(-s_amp*bd.cos(theta)*bd.cos(phi)*bd.exp(1j*s_phase) \
+                            -p_amp*bd.sin(phi)*bd.exp(1j*p_phase)).T
+            else:
+                a0 = a0 + tmp1*(-s_amp*bd.cos(theta)*bd.cos(phi)*bd.exp(1j*s_phase) \
+                            -p_amp*bd.sin(phi)*bd.exp(1j*p_phase))
             tmp2 = bd.zeros(2*self.nG,dtype=complex,device=device)
-            tmp2[order+self.nG] = 1.0            
-            a0 = a0 + tmp2*(-s_amp*bd.cos(theta)*bd.sin(phi)*bd.exp(1j*s_phase) \
-                            +p_amp*bd.cos(phi)*bd.exp(1j*p_phase))
+            tmp2[order+self.nG] = 1.0
+            if theta_batch:      
+                a0 = a0 + tmp2.unsqueeze(0)*(-s_amp*bd.cos(theta)*bd.sin(phi)*bd.exp(1j*s_phase) \
+                                +p_amp*bd.cos(phi)*bd.exp(1j*p_phase)).T
+            else:
+                a0 = a0 + tmp2*(-s_amp*bd.cos(theta)*bd.sin(phi)*bd.exp(1j*s_phase) \
+                                +p_amp*bd.cos(phi)*bd.exp(1j*p_phase))
         elif direction == 'backward':
             tmp1 = bd.zeros(2*self.nG,dtype=complex,device=device)
             tmp1[order] = 1.0
-            bN = bN + tmp1*(-s_amp*bd.cos(theta)*bd.cos(phi)*bd.exp(1j*s_phase) \
-                            -p_amp*bd.sin(phi)*bd.exp(1j*p_phase))
-
+            if theta_batch:
+                bN = bN + tmp1.unsqueeze(0)*(-s_amp*bd.cos(theta)*bd.cos(phi)*bd.exp(1j*s_phase) \
+                                -p_amp*bd.sin(phi)*bd.exp(1j*p_phase)).T
+            else:
+                bN = bN + tmp1*(-s_amp*bd.cos(theta)*bd.cos(phi)*bd.exp(1j*s_phase) \
+                                -p_amp*bd.sin(phi)*bd.exp(1j*p_phase))
             tmp2 = bd.zeros(2*self.nG,dtype=complex,device=device)
             tmp2[order+self.nG] = 1.0
-            bN = bN + tmp2*(-s_amp*bd.cos(theta)*bd.sin(phi)*bd.exp(1j*s_phase) \
-                            +p_amp*bd.cos(phi)*bd.exp(1j*p_phase))
+            if theta_batch:
+                bN = bN + tmp2.unsqueeze(0)*(-s_amp*bd.cos(theta)*bd.sin(phi)*bd.exp(1j*s_phase) \
+                                +p_amp*bd.cos(phi)*bd.exp(1j*p_phase)).T
+            else:
+                bN = bN + tmp2*(-s_amp*bd.cos(theta)*bd.sin(phi)*bd.exp(1j*s_phase) \
+                                +p_amp*bd.cos(phi)*bd.exp(1j*p_phase))
         
         self.a0 = a0
         self.bN = bN
@@ -254,8 +282,17 @@ class obj:
             T = bd.real(-bi)
 
         if normalize == 1:
+            if byorder == 0:
+                R = R.reshape_as(self.normalization)
+                T = T.reshape_as(self.normalization)
+            else:
+                global theta_batch
+                if theta_batch:
+                    self.normalization = self.normalization.unsqueeze(-1)
+            
             R = R*self.normalization
             T = T*self.normalization
+
         return R,T
 
     def GetAmplitudes_noTranslate(self,which_layer,device):
@@ -411,7 +448,7 @@ class obj:
         val = bd.trace(bd.dot(abM,tmp))
 
         if normalize == 1:
-            val = val*self.normalization
+            val = val.unsqueeze(-1)*self.normalization
         return val
         
     def Solve_ZStressTensorIntegral(self,which_layer):
@@ -457,6 +494,7 @@ class obj:
 def MakeKPMatrix(omega,layer_type,epinv,kx,ky,device):
     nG = kx.shape[-1]
     global old
+    global theta_batch
     # uniform layer, epinv has length 1
     if layer_type == 0:
         # JkkJT = np.block([[np.diag(ky*ky), np.diag(-ky*kx)],
@@ -467,10 +505,12 @@ def MakeKPMatrix(omega,layer_type,epinv,kx,ky,device):
             JkkJT = bd.dot(Jk,bd.transpose(Jk)) # [586, 586]
             kp = omega**2*bd.eye(2*nG, device=device) - epinv*JkkJT
         else:
-            Jk = torch.cat((bd.diag(-ky),bd.diag(kx)), dim=1)
-            JkkJT = bd.dot(Jk,Jk.transpose(1, 2))
-            kp = omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0) - epinv.unsqueeze(-1)*JkkJT
-
+            Jk = torch.cat((bd.diag(-ky),bd.diag(kx)), dim=-2)
+            JkkJT = bd.dot(Jk,Jk.transpose(-2, -1))
+            if theta_batch:
+                kp = (omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0)).unsqueeze(1) - epinv.unsqueeze(-1).unsqueeze(-1)*JkkJT
+            else:
+                kp = omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0) - epinv.unsqueeze(-1)*JkkJT
     # patterned layer
     else:
         if old:
@@ -478,16 +518,22 @@ def MakeKPMatrix(omega,layer_type,epinv,kx,ky,device):
             tmp = bd.dot(Jk,epinv)
             kp = omega**2*bd.eye(2*nG, device=device) - bd.dot(tmp,bd.transpose(Jk))
         else:
-            Jk = torch.cat((bd.diag(-ky),bd.diag(kx)), dim=1)
-            tmp = bd.dot(Jk,epinv)
-            kp = omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0) - bd.dot(tmp,Jk.transpose(1, 2))
-
+            Jk = torch.cat((bd.diag(-ky),bd.diag(kx)), dim=-2)
+            if theta_batch:
+                tmp = bd.dot(Jk,epinv.unsqueeze(1))
+                kp = (omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0)).unsqueeze(1) - bd.dot(tmp,Jk.transpose(-2, -1))
+            else:
+                tmp = bd.dot(Jk,epinv)
+                kp = omega.unsqueeze(-1)**2*bd.eye(2*nG, device=device).unsqueeze(0) - bd.dot(tmp,Jk.transpose(1, 2))
     return kp
 
 def SolveLayerEigensystem_uniform(omega,kx,ky,epsilon,device):
     nG = kx.shape[-1]
-
-    q = bd.sqrt(epsilon*omega**2 - kx**2 - ky**2)
+    global theta_batch
+    if theta_batch:
+        q = bd.sqrt((epsilon*omega**2).unsqueeze(-1) - kx**2 - ky**2)
+    else:
+        q = bd.sqrt(epsilon*omega**2 - kx**2 - ky**2)
     # branch cut choice
     q = bd.where(bd.imag(q)<0.,-q,q)
     global old
@@ -495,7 +541,7 @@ def SolveLayerEigensystem_uniform(omega,kx,ky,epsilon,device):
         q = bd.concatenate((q,q))
         phi = bd.eye(2*nG, dtype=complex, device=device)
     else:
-        q = bd.concatenate((q,q), dim=1)
+        q = bd.concatenate((q,q), dim=-1)
         phi = bd.eye(2*nG, dtype=complex, device=device).unsqueeze(0)
 
     return q,phi
@@ -504,6 +550,7 @@ def SolveLayerEigensystem(omega,kx,ky,kp,ep2):
     nG = kx.shape[-1]
     
     global old
+    global theta_batch
     if old:
         k = bd.vstack((bd.diag(kx),bd.diag(ky)))
         kkT = bd.dot(k,bd.transpose(k))
@@ -515,9 +562,12 @@ def SolveLayerEigensystem(omega,kx,ky,kp,ep2):
         # branch cut choice
         q = bd.where(bd.imag(q)<0.,-q,q)
     else:
-        k = torch.cat((bd.diag(kx),bd.diag(ky)), dim=1)
-        kkT = bd.dot(k,k.transpose(1, 2))
-        M = bd.dot(ep2,kp) - kkT
+        k = torch.cat((bd.diag(kx),bd.diag(ky)), dim=-2)
+        kkT = bd.dot(k,k.transpose(-2, -1))
+        if theta_batch:
+            M = bd.dot(ep2.unsqueeze(1),kp) - kkT
+        else:
+            M = bd.dot(ep2,kp) - kkT
 
         q,phi = bd.eig(M)
 
@@ -592,8 +642,16 @@ def SolveExterior(a0,bN,q_list,phi_list,kp_list,thickness_list,device):
     Nlayer = len(thickness_list) # total number of layers
     S11, S12, S21, S22 = GetSMatrix(0,Nlayer-1,q_list,phi_list,kp_list,thickness_list,device)
 
+    global theta_batch
+    if theta_batch:
+        a0 = a0.unsqueeze(0).unsqueeze(-1)
+        bN = bN.unsqueeze(0).unsqueeze(-1)
     aN = bd.dot(S11,a0) + bd.dot(S12,bN)
     b0 = bd.dot(S21,a0) + bd.dot(S22,bN)
+
+    if theta_batch:
+        aN = aN.squeeze(-1)
+        b0 = b0.squeeze(-1)
     
     return aN,b0
 
@@ -631,7 +689,10 @@ def GetZPoyntingFlux(ai,bi,omega,kp,phi,q,byorder=0):
     n2 = ai.shape[-1]
     n = int(n2/2)
     # A = kp phi inv(omega*q)
-    A = bd.dot(bd.dot(kp,phi),  bd.diag(1./omega/q))
+    if theta_batch:
+        A = bd.dot(bd.dot(kp,phi),  bd.diag(1./omega.unsqueeze(-1)/q))
+    else:
+        A = bd.dot(bd.dot(kp,phi),  bd.diag(1./omega/q))
 
     global old
     if old:
@@ -661,12 +722,16 @@ def GetZPoyntingFlux(ai,bi,omega,kp,phi,q,byorder=0):
             forward = bd.sum(forward)
             backward = bd.sum(backward)
     else:
-        forward = forward_xy[:,:n] + forward_xy[:,n:]
-        backward = backward_xy[:,:n] + backward_xy[:,n:]
+        if theta_batch:
+            forward = forward_xy[:,:,:n] + forward_xy[:,:,n:]
+            backward = backward_xy[:,:,:n] + backward_xy[:,:,n:]
+        else:
+            forward = forward_xy[:,:n] + forward_xy[:,n:]
+            backward = backward_xy[:,:n] + backward_xy[:,n:]
 
         if byorder == 0:
-            forward = bd.sum(forward, dim=1)
-            backward = bd.sum(backward, dim=1)
+            forward = bd.sum(forward, dim=-1)
+            backward = bd.sum(backward, dim=-1)
 
     return forward, backward
 
